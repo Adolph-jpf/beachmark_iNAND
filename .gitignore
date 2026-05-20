@@ -1,0 +1,27 @@
+.venv/
+.pytest_cache/
+__pycache__/
+*.pyc
+
+build/
+dist/
+release/
+*.spec
+
+logs/
+output/
+
+# Local/generated Office exports
+INAND weekly bachmark*.xlsx
+SDSS INAND YIELD WW*_benchmark.pptx
+Screenshot*.jpg
+Screenshot*.png
+PN_TEST_STEPID_YIELD.csv
+PN_TEST_STEPID_YIELD.txt
+PN_TEST_STEPID_YIELD.xml
+~$*.xlsx
+~$*.pptx
+
+# Source/reference Excel files are tracked intentionally:
+# Rule_list.xlsx
+# bachmark SRC.xlsx
