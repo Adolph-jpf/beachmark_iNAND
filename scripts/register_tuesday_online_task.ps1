@@ -22,10 +22,10 @@ $args = @(
 
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $args -WorkingDirectory $ProjectDir
 
-# Run at user logon and keep trying every 30 minutes on Tuesday.
-# The runner script is idempotent: after one success in the ISO week it exits.
-$logonTrigger = New-ScheduledTaskTrigger -AtLogOn
-$weeklyTrigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Tuesday -At 8:00am
+# Domain policy on many corporate PCs blocks "At logon" triggers (Access denied).
+# Use a Tuesday schedule with 30-minute repetition instead; run_if_tuesday_online.ps1
+# still checks day-of-week and skips after one success per ISO week.
+$weeklyTrigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Tuesday -At 6:00am
 $weeklyTrigger.Repetition = New-CimInstance `
     -Namespace Root/Microsoft/Windows/TaskScheduler `
     -ClassName MSFT_TaskRepetitionPattern `
@@ -45,8 +45,9 @@ $settings = New-ScheduledTaskSettingsSet `
 Register-ScheduledTask `
     -TaskName $TaskName `
     -Action $action `
-    -Trigger @($logonTrigger, $weeklyTrigger) `
+    -Trigger $weeklyTrigger `
     -Settings $settings `
+    -User $env:USERNAME `
     -Description "Run INAND benchmark once on Tuesday when the Spotfire export share is available." `
     -Force | Out-Null
 

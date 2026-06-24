@@ -279,8 +279,8 @@ powershell -ExecutionPolicy Bypass -File "scripts/register_tuesday_online_task.p
 
 * 这是 Windows Task Scheduler 后台任务，不依赖 Cursor 或注册时的 PowerShell 窗口。
 * 平时不常驻运行，只在触发时间启动短任务；检查不满足条件时会立即退出，资源占用很低。
-* 用户登录时触发一次。
-* 每周二 08:00 开始每 30 分钟尝试一次，持续一天。
+* 每周二 06:00 开始每 30 分钟尝试一次，持续一天。
+* 公司域策略通常会禁止“用户登录时”触发任务；因此不使用登录触发，改用周二定时轮询。
 * 脚本会先检查今天是否周二、共享 CSV 是否可访问。
 * 一旦本 ISO 周成功运行，会写入本地 stamp 文件，本周后续触发会自动跳过。
 * 日志位置:
