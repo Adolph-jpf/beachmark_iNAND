@@ -26,8 +26,15 @@ $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $args -Wor
 # The runner script is idempotent: after one success in the ISO week it exits.
 $logonTrigger = New-ScheduledTaskTrigger -AtLogOn
 $weeklyTrigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Tuesday -At 8:00am
-$weeklyTrigger.Repetition.Interval = "PT30M"
-$weeklyTrigger.Repetition.Duration = "P1D"
+$weeklyTrigger.Repetition = New-CimInstance `
+    -Namespace Root/Microsoft/Windows/TaskScheduler `
+    -ClassName MSFT_TaskRepetitionPattern `
+    -ClientOnly `
+    -Property @{
+        Interval          = 'PT30M'
+        Duration          = 'P1D'
+        StopAtDurationEnd = $false
+    }
 
 $settings = New-ScheduledTaskSettingsSet `
     -StartWhenAvailable `
