@@ -8,6 +8,12 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from .config import (
+    DEFAULT_DATA_PATH,
+    DEFAULT_OUTPUT_PATH,
+    DEFAULT_RULE_PATH,
+    DEFAULT_SRC_GOALS_PATH,
+)
 from .data_loader import load_yield_data, resolve_data_source, validate_yield
 from .excel_writer import write_excel
 from .goal_loader import GoalTable, load_goal_table
@@ -148,18 +154,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     p.add_argument(
         "--data",
-        default="PN_TEST_STEPID_YIELD.txt",
+        default=DEFAULT_DATA_PATH,
         help="原始数据 .txt/.csv (同名 .csv 会优先)",
     )
-    p.add_argument("--rules", default="Rule_list.xlsx", help="规则 .xlsx")
+    p.add_argument("--rules", default=DEFAULT_RULE_PATH, help="规则 .xlsx")
     p.add_argument(
         "--src-goals",
-        default="bachmark SRC.xlsx",
+        default=DEFAULT_SRC_GOALS_PATH,
         help="Goal/S-Goal 参考 SRC .xlsx; 留空字符串则不使用",
     )
     p.add_argument(
         "--output",
-        default="output/INAND_weekly_benchmark.xlsx",
+        default=DEFAULT_OUTPUT_PATH,
         help="输出 Excel 路径",
     )
     p.add_argument(

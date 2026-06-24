@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import subprocess
 import sys
 import traceback
@@ -40,6 +41,14 @@ from PyQt6.QtWidgets import (
 )
 
 from .cli import run as cli_run
+from .config import (
+    DEFAULT_DATA_PATH,
+    DEFAULT_OUTPUT_PATH,
+    DEFAULT_PPT_PATH,
+    DEFAULT_PUBLIC_OUTPUT_DIR,
+    DEFAULT_RULE_PATH,
+    DEFAULT_SRC_GOALS_PATH,
+)
 from .data_loader import resolve_data_source
 
 logger = logging.getLogger("benchmark.gui")
@@ -151,10 +160,10 @@ class MainWindow(QMainWindow):
         head.setObjectName("cardTitle")
         lay.addWidget(head, 0, 0, 1, 2)
 
-        self.data_edit = self._make_path_input("PN_TEST_STEPID_YIELD.txt")
-        self.rule_edit = self._make_path_input("Rule_list.xlsx")
-        self.src_edit = self._make_path_input("bachmark SRC.xlsx")
-        self.output_edit = self._make_path_input("output/INAND_weekly_benchmark.xlsx")
+        self.data_edit = self._make_path_input(DEFAULT_DATA_PATH)
+        self.rule_edit = self._make_path_input(DEFAULT_RULE_PATH)
+        self.src_edit = self._make_path_input(DEFAULT_SRC_GOALS_PATH)
+        self.output_edit = self._make_path_input(DEFAULT_OUTPUT_PATH)
 
         lay.addWidget(QLabel("原始数据 (.txt/.csv)"), 1, 0)
         lay.addLayout(self._with_browse(self.data_edit, "open", "*.txt *.csv"), 1, 1)
@@ -211,9 +220,9 @@ class MainWindow(QMainWindow):
         head.setObjectName("cardTitle")
         lay.addWidget(head, 0, 0, 1, 2)
 
-        self.report_edit = self._make_path_input("output/INAND_weekly_benchmark.xlsx")
-        self.ppt_edit = self._make_path_input("SDSS INAND YIELD WW45_2026_benchmark.pptx")
-        self.rule_for_ppt_edit = self._make_path_input("Rule_list.xlsx")
+        self.report_edit = self._make_path_input(DEFAULT_OUTPUT_PATH)
+        self.ppt_edit = self._make_path_input(DEFAULT_PPT_PATH)
+        self.rule_for_ppt_edit = self._make_path_input(DEFAULT_RULE_PATH)
 
         lay.addWidget(QLabel("用于粘贴的 Excel"), 1, 0)
         lay.addLayout(self._with_browse(self.report_edit, "open", "*.xlsx"), 1, 1)
@@ -510,6 +519,14 @@ class MainWindow(QMainWindow):
             )
             excel_path = str(meta.get("output") or meta.get("output_actual") or output_path)
             logger.info("Excel generated: %s", excel_path)
+            prev_week = str((meta.get("periods") or {}).get("prev_week") or "")
+            match = re.search(r"(\d{4})FW(\d{1,2})", prev_week)
+            output_ppt_path = ppt_path
+            report_week_label = ""
+            if match:
+                year, week = match.group(1), int(match.group(2))
+                output_ppt_path = Path("output") / f"SDSS INAND YIELD WW{week:02d}_{year}_benchmark.pptx"
+                report_week_label = f"W{week:02d}'{year[-2:]}"
             script = _resource_path("scripts/paste_excel_to_ppt.ps1")
             cmd = [
                 "powershell",
@@ -523,6 +540,10 @@ class MainWindow(QMainWindow):
                 excel_path,
                 "-PptPath",
                 str(ppt_path),
+                "-OutputPptPath",
+                str(output_ppt_path),
+                "-ReportWeekLabel",
+                report_week_label,
                 "-LeftInch",
                 str(left),
                 "-TopInch",
@@ -537,7 +558,31 @@ class MainWindow(QMainWindow):
                 logger.warning(line)
             if proc.returncode != 0:
                 raise RuntimeError("一键任务失败，请看日志")
-            return {"excel": excel_path, "ppt": str(ppt_path)}
+            sync_proc = subprocess.run(
+                [
+                    "robocopy",
+                    "output",
+                    DEFAULT_PUBLIC_OUTPUT_DIR,
+                    "/E",
+                    "/R:1",
+                    "/W:2",
+                    "/NFL",
+                    "/NDL",
+                    "/NP",
+                ],
+                capture_output=True,
+                text=True,
+                cwd=str(Path.cwd()),
+            )
+            for line in (sync_proc.stdout or "").splitlines():
+                if line.strip():
+                    logger.info(line)
+            for line in (sync_proc.stderr or "").splitlines():
+                if line.strip():
+                    logger.warning(line)
+            if sync_proc.returncode >= 8:
+                raise RuntimeError(f"output 同步到公共盘失败: robocopy exit={sync_proc.returncode}")
+            return {"excel": excel_path, "ppt": str(output_ppt_path)}
 
         self._run_task("all", runner)
 

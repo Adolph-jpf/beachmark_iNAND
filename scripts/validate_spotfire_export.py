@@ -10,6 +10,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from benchmark.config import DEFAULT_DATA_PATH  # noqa: E402
 from benchmark.data_loader import (  # noqa: E402
     COL_DEVICE,
     COL_DIEQTY,
@@ -48,7 +49,7 @@ REQUIRED_COLUMNS = {
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Validate Spotfire export contract")
-    p.add_argument("--data", default="PN_TEST_STEPID_YIELD.txt", help="输入数据路径")
+    p.add_argument("--data", default=DEFAULT_DATA_PATH, help="输入数据路径")
     p.add_argument(
         "--max-age-hours",
         type=float,

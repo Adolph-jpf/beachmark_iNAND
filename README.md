@@ -7,6 +7,8 @@
 
 * 读取 Spotfire 导出的 ``PN_TEST_STEPID_YIELD.txt`` 或 ``.csv``。
   若同目录同名同时存在 ``.txt`` 与 ``.csv``，**优先使用 ``.csv``**。
+  默认数据源为服务器路径:
+  ``\\cvpfilip03\SDSS_MFG_Data\ENG_Data\Tempfile\ADolph\Spotfire_file\PN_TEST_STEPID_YIELD.csv``。
 * 校验 ``LT_YIELD ≈ LT_OUTQTY / LT_INQTY/Volume``。
 * 从原始数据的 ``WEEK`` + ``FLAG`` + ``STARTTIME``/``ENDTIME`` 列直接挑出
   current week / prev week / 上一月 (M) / 上一季 (Q) - **不重新计算 fiscal calendar**。
@@ -85,11 +87,83 @@ cd "C:\Users\1000265829\Documents\My_Project\benchmark基础"
 uv sync
 ```
 
+## 常用命令速查
+
+### 日常运行
+
+```powershell
+# 打开 GUI
+uv run python main.py --gui
+
+# 运行发布版 GUI
+dist\INANDBenchmark.exe
+
+# 一键生成 Excel + 更新 PPT + 同步 output 到公共盘
+powershell -ExecutionPolicy Bypass -File "scripts/run_all_to_ppt.ps1"
+
+# 只校验 Spotfire 共享 CSV 是否可用
+uv run python scripts/validate_spotfire_export.py
+
+# 只用 CLI 生成 Excel
+uv run python main.py
+```
+
+### 后台自动任务
+
+```powershell
+# 注册每周二自动任务
+powershell -ExecutionPolicy Bypass -File "scripts/register_tuesday_online_task.ps1"
+
+# 查看任务状态和最近调度日志
+powershell -ExecutionPolicy Bypass -File "scripts/manage_tuesday_task.ps1" -Action status
+
+# 查看调度日志和最近一次完整运行日志
+powershell -ExecutionPolicy Bypass -File "scripts/manage_tuesday_task.ps1" -Action logs
+
+# 手动触发一次任务
+powershell -ExecutionPolicy Bypass -File "scripts/manage_tuesday_task.ps1" -Action run
+
+# 停止当前正在运行的任务实例
+powershell -ExecutionPolicy Bypass -File "scripts/manage_tuesday_task.ps1" -Action stop
+
+# 暂停/恢复后续自动触发
+powershell -ExecutionPolicy Bypass -File "scripts/manage_tuesday_task.ps1" -Action disable
+powershell -ExecutionPolicy Bypass -File "scripts/manage_tuesday_task.ps1" -Action enable
+
+# 彻底删除计划任务
+powershell -ExecutionPolicy Bypass -File "scripts/manage_tuesday_task.ps1" -Action unregister
+```
+
+### 开发、打包、发布
+
+```powershell
+# 运行测试
+uv run pytest -q
+
+# 打包 Windows GUI exe
+powershell -ExecutionPolicy Bypass -File "scripts/build_windows_exe.ps1"
+
+# 查看 Git 状态
+git status --short --branch
+
+# 提交并推送当前改动
+git add README.md RELEASE.md scripts src
+git commit -m "Update benchmark automation workflow"
+git push
+```
+
+默认共享路径：
+
+```text
+数据源: \\cvpfilip03\SDSS_MFG_Data\ENG_Data\Tempfile\ADolph\Spotfire_file\PN_TEST_STEPID_YIELD.csv
+公共输出: \\cvpfilip03\SDSS_MFG_Data\ENG_Data\Tempfile\ADolph\Spotfire_file\output
+```
+
 ## 项目逻辑总览
 
 ```mermaid
 flowchart LR
-  spotfire[Spotfire Export] --> raw[CSV or TXT]
+  spotfire[Spotfire Server Export] --> raw[PN_TEST_STEPID_YIELD.csv on shared path]
   raw --> loader[data_loader]
   rules[Rule_list.xlsx] --> rule_loader[rule_loader]
   src[bachmark SRC.xlsx] --> goal_loader[goal_loader]
@@ -108,6 +182,7 @@ flowchart LR
 核心原则:
 
 * 数据源优先级: 同名 ``.csv`` 优先于 ``.txt``。
+* 默认消费 Spotfire 服务器每周二生成的共享 CSV。
 * Fiscal period 不自行计算日历, 只使用数据源中 ``WEEK`` / ``FLAG`` / ``STARTTIME`` / ``ENDTIME``。
 * 产品筛选只依据 ``Rule_list.xlsx``。
 * Goal/S-Goal 只来自 ``bachmark SRC.xlsx`` 或在未提供 SRC 时回退原始数据。
@@ -132,16 +207,23 @@ powershell -ExecutionPolicy Bypass -File "scripts/run_all_to_ppt.ps1"
 ```
 
 说明:
+* 默认读取服务器共享 CSV:
+  ``\\cvpfilip03\SDSS_MFG_Data\ENG_Data\Tempfile\ADolph\Spotfire_file\PN_TEST_STEPID_YIELD.csv``。
 * 该命令不传 ``--today``，默认使用电脑当前日期/时间（实时）。
 * 先执行 Spotfire 导出契约校验（文件时效/行数/关键列），通过后才继续。
 * 会先生成 Excel，再按 ``Rule_list.xlsx`` 第三个 sheet(``Sheet1``) 的顺序/页码，
   把各产品表粘贴到 ``SDSS INAND YIELD WW45_2026_benchmark.pptx``。
+* PPT 不再直接覆盖模板；会按本次报告所属的上一周 ``prev_week`` 自动另存到 ``output``，
+  例如当前周为 ``2026FW52`` 时，报告名为 ``output\SDSS INAND YIELD WW51_2026_benchmark.pptx``。
+* PPT 内部所有 ``Wxx'yy`` 周别文字也会同步替换为报告周别，例如 ``W51'26``。
+* 流程结束后会把本地 ``output`` 目录同步复制到公共盘:
+  ``\\cvpfilip03\SDSS_MFG_Data\ENG_Data\Tempfile\ADolph\Spotfire_file\output``。
 * 粘贴位置固定: 距离左边 ``0.2"``、距离上边 ``1.5"``。
 
 ### 仅执行 Spotfire 导出校验
 
 ```powershell
-uv run python scripts/validate_spotfire_export.py --data "PN_TEST_STEPID_YIELD.txt"
+uv run python scripts/validate_spotfire_export.py
 ```
 
 可选参数:
@@ -150,7 +232,7 @@ uv run python scripts/validate_spotfire_export.py --data "PN_TEST_STEPID_YIELD.t
 
 参数:
 
-* ``--data``         原始数据 `.txt/.csv` 路径, 默认 ``PN_TEST_STEPID_YIELD.txt``。
+* ``--data``         原始数据 `.txt/.csv` 路径, 默认服务器共享 CSV。
                      若同名 `.csv` 存在会自动优先选 `.csv`
 * ``--rules``        规则 .xlsx 路径, 默认 ``Rule_list.xlsx``
 * ``--src-goals``    Goal/S-Goal SRC 路径, 默认 ``bachmark SRC.xlsx``;
@@ -180,10 +262,65 @@ GUI 提供:
 * **Excel 与 PPT 分区操作**:
   * ``生成 Excel``: 仅更新报表 Excel
   * ``更新 PPT``: 仅把指定 Excel 粘贴到指定 PPT (自动删除旧表后重贴)
-  * ``一键 Excel + PPT``: 串行执行两步
+  * ``一键 Excel + PPT``: 串行执行两步，按报告所属上一周自动另存 PPT，并同步周别文字
 * ``最近一次运行结果`` 面板: 显示最后任务类型、运行时间、最新 Excel/PPT 路径与状态
 * 实时滚动的运行日志
 * 完成后弹出摘要并能"打开输出目录"
+
+### 每周二自动运行（当前用户，无管理员权限）
+
+项目提供一个计划任务注册脚本：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "scripts/register_tuesday_online_task.ps1"
+```
+
+注册后会创建当前用户任务 ``INAND Benchmark Tuesday Online``：
+
+* 这是 Windows Task Scheduler 后台任务，不依赖 Cursor 或注册时的 PowerShell 窗口。
+* 平时不常驻运行，只在触发时间启动短任务；检查不满足条件时会立即退出，资源占用很低。
+* 用户登录时触发一次。
+* 每周二 08:00 开始每 30 分钟尝试一次，持续一天。
+* 脚本会先检查今天是否周二、共享 CSV 是否可访问。
+* 一旦本 ISO 周成功运行，会写入本地 stamp 文件，本周后续触发会自动跳过。
+* 日志位置:
+  ``%LOCALAPPDATA%\INANDBenchmark\scheduled_run.log``。
+
+管理命令：
+
+```powershell
+# 查看任务状态 + 最近调度日志
+powershell -ExecutionPolicy Bypass -File "scripts/manage_tuesday_task.ps1" -Action status
+
+# 查看调度日志和最近一次完整运行日志
+powershell -ExecutionPolicy Bypass -File "scripts/manage_tuesday_task.ps1" -Action logs
+
+# 手动触发一次任务
+powershell -ExecutionPolicy Bypass -File "scripts/manage_tuesday_task.ps1" -Action run
+
+# 停止当前正在运行的任务实例
+powershell -ExecutionPolicy Bypass -File "scripts/manage_tuesday_task.ps1" -Action stop
+
+# 暂停/恢复后续自动触发
+powershell -ExecutionPolicy Bypass -File "scripts/manage_tuesday_task.ps1" -Action disable
+powershell -ExecutionPolicy Bypass -File "scripts/manage_tuesday_task.ps1" -Action enable
+
+# 彻底删除计划任务
+powershell -ExecutionPolicy Bypass -File "scripts/manage_tuesday_task.ps1" -Action unregister
+```
+
+### 参考文件是否需要搬到服务器
+
+不强制。默认逻辑是：
+
+* ``PN_TEST_STEPID_YIELD.csv`` 从 Spotfire 服务器共享路径读取。
+* ``Rule_list.xlsx``、``bachmark SRC.xlsx``、PPT 模板默认仍从项目目录读取。
+
+建议：
+
+* 只有你本机使用：参考文件放项目目录即可。
+* Team 多人共用：建议把 ``Rule_list.xlsx``、``bachmark SRC.xlsx`` 和 PPT 模板也放到共享目录，运行时在 GUI/CLI 参数中指向共享路径，避免每台电脑规则版本不一致。
+* 如果规则或目标值经常调整，优先共享参考文件；如果它们相对稳定，可以随 release 包一起分发。
 
 ### Spotfire 运维文档
 

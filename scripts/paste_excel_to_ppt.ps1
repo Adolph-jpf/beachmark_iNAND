@@ -2,6 +2,8 @@ param(
     [string]$RulePath = "Rule_list.xlsx",
     [string]$ReportPath = "",
     [string]$PptPath = "SDSS INAND YIELD WW45_2026_benchmark.pptx",
+    [string]$OutputPptPath = "",
+    [string]$ReportWeekLabel = "",
     [double]$LeftInch = 0.2,
     [double]$TopInch = 1.5
 )
@@ -9,11 +11,89 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-function Normalize-Name([string]$s) {
+function ConvertTo-NormalizedName([string]$s) {
     if ($null -eq $s) { return "" }
     $x = $s.Trim().ToLowerInvariant()
     $x = [regex]::Replace($x, "\s+", " ")
     return $x
+}
+
+function Update-TextRangeWeek($textRange, [string]$reportWeekLabel) {
+    if ([string]::IsNullOrWhiteSpace($reportWeekLabel) -or $null -eq $textRange) {
+        return 0
+    }
+
+    $text = [string]$textRange.Text
+    if ([string]::IsNullOrWhiteSpace($text)) {
+        return 0
+    }
+
+    $matches = [regex]::Matches($text, "W\d{1,2}'\d{2}") |
+        ForEach-Object { $_.Value } |
+        Sort-Object -Unique
+
+    $changed = 0
+    foreach ($old in $matches) {
+        if ($old -eq $reportWeekLabel) { continue }
+        try {
+            $textRange.Replace($old, $reportWeekLabel, 0, 0, 0) | Out-Null
+        }
+        catch {
+            $textRange.Text = [regex]::Replace([string]$textRange.Text, [regex]::Escape($old), $reportWeekLabel)
+        }
+        $changed++
+    }
+    return $changed
+}
+
+function Update-ShapeWeekText($shape, [string]$reportWeekLabel) {
+    $changed = 0
+
+    try {
+        if ($shape.Type -eq 6) {
+            for ($i = 1; $i -le $shape.GroupItems.Count; $i++) {
+                $changed += Update-ShapeWeekText $shape.GroupItems.Item($i) $reportWeekLabel
+            }
+        }
+    }
+    catch {}
+
+    try {
+        if ($shape.HasTextFrame -eq -1 -and $shape.TextFrame.HasText -eq -1) {
+            $changed += Update-TextRangeWeek $shape.TextFrame.TextRange $reportWeekLabel
+        }
+    }
+    catch {}
+
+    try {
+        if ($shape.HasTable -eq -1) {
+            for ($r = 1; $r -le $shape.Table.Rows.Count; $r++) {
+                for ($c = 1; $c -le $shape.Table.Columns.Count; $c++) {
+                    $cellShape = $shape.Table.Cell($r, $c).Shape
+                    if ($cellShape.TextFrame.HasText -eq -1) {
+                        $changed += Update-TextRangeWeek $cellShape.TextFrame.TextRange $reportWeekLabel
+                    }
+                }
+            }
+        }
+    }
+    catch {}
+
+    return $changed
+}
+
+function Update-ReportWeekText($presentation, [string]$reportWeekLabel) {
+    if ([string]::IsNullOrWhiteSpace($reportWeekLabel)) {
+        return 0
+    }
+
+    $changed = 0
+    foreach ($slide in $presentation.Slides) {
+        for ($i = 1; $i -le $slide.Shapes.Count; $i++) {
+            $changed += Update-ShapeWeekText $slide.Shapes.Item($i) $reportWeekLabel
+        }
+    }
+    return $changed
 }
 
 function Remove-OldBenchShapes($slide, [double]$leftPt, [double]$topPt) {
@@ -78,10 +158,27 @@ if ([string]::IsNullOrWhiteSpace($ReportPath)) {
 $RulePath = (Resolve-Path $RulePath).Path
 $ReportPath = (Resolve-Path $ReportPath).Path
 $PptPath = (Resolve-Path $PptPath).Path
+if ([string]::IsNullOrWhiteSpace($OutputPptPath)) {
+    $OutputPptPath = $PptPath
+}
+else {
+    $outParent = Split-Path -Parent $OutputPptPath
+    if (-not [string]::IsNullOrWhiteSpace($outParent)) {
+        New-Item -ItemType Directory -Force -Path $outParent | Out-Null
+    }
+    if ((Test-Path $OutputPptPath) -and ((Resolve-Path $OutputPptPath).Path -ne $PptPath)) {
+        Remove-Item $OutputPptPath -Force
+    }
+    if ((-not (Test-Path $OutputPptPath)) -or ((Resolve-Path $OutputPptPath).Path -ne $PptPath)) {
+        Copy-Item -Path $PptPath -Destination $OutputPptPath -Force
+    }
+    $OutputPptPath = (Resolve-Path $OutputPptPath).Path
+}
 
 Write-Host "Rule  : $RulePath"
 Write-Host "Excel : $ReportPath"
-Write-Host "PPT   : $PptPath"
+Write-Host "PPT template: $PptPath"
+Write-Host "PPT output  : $OutputPptPath"
 
 $excel = $null
 $ppt = $null
@@ -115,12 +212,16 @@ try {
     $reportWb = $excel.Workbooks.Open($ReportPath)
     $sheetMap = @{}
     foreach ($ws in $reportWb.Worksheets) {
-        $sheetMap[(Normalize-Name $ws.Name)] = $ws
+        $sheetMap[(ConvertTo-NormalizedName $ws.Name)] = $ws
     }
 
     $ppt = New-Object -ComObject PowerPoint.Application
     $ppt.Visible = -1
-    $pres = $ppt.Presentations.Open($PptPath, $false, $false, $false)
+    $pres = $ppt.Presentations.Open($OutputPptPath, $false, $false, $false)
+    if (-not [string]::IsNullOrWhiteSpace($ReportWeekLabel)) {
+        $changedWeekText = Update-ReportWeekText $pres $ReportWeekLabel
+        Write-Host "Updated report week text to $ReportWeekLabel ($changedWeekText shape/text range update(s))"
+    }
 
     $leftPt = $LeftInch * 72.0
     $topPt = $TopInch * 72.0
@@ -136,7 +237,7 @@ try {
             continue
         }
 
-        $key = Normalize-Name $o.Product
+        $key = ConvertTo-NormalizedName $o.Product
         if (-not $sheetMap.ContainsKey($key)) {
             Write-Warning "Skip [$($o.Product)]: sheet not found in report workbook"
             continue
@@ -195,7 +296,7 @@ try {
     }
 
     $pres.Save()
-    Write-Host "Done, pasted $pasted table(s) to: $PptPath"
+    Write-Host "Done, pasted $pasted table(s) to: $OutputPptPath"
 }
 finally {
     if ($null -ne $pres) { $pres.Close() }
